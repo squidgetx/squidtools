@@ -1,4 +1,4 @@
-# data_wrangler
+# squidtools
 
 Collection of Python functions and libraries that I would like to be
 generally available to many different projects that involve data wrangling

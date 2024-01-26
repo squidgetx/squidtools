@@ -1,0 +1,13 @@
+README.md
+setup.py
+squidtools/__init__.py
+squidtools/gpt_utils.py
+squidtools/proquest.py
+squidtools/robust_task.py
+squidtools/util.py
+squidtools/workflow.py
+squidtools.egg-info/PKG-INFO
+squidtools.egg-info/SOURCES.txt
+squidtools.egg-info/dependency_links.txt
+squidtools.egg-info/requires.txt
+squidtools.egg-info/top_level.txt

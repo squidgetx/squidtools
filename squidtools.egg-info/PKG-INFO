@@ -1,0 +1,6 @@
+Metadata-Version: 2.1
+Name: squidtools
+Version: 0.0.1
+Summary: A collection of python tools and libraries for computational social science research
+Author: Sylvan Zheng <saz310@nyu.edu>
+License: MIT
