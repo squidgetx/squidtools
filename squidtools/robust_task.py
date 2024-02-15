@@ -1,8 +1,12 @@
+import asyncio
 import os
 import io
 import json
 import csv
 import sys
+import time
+
+from .util import gen_batches, print_err
 
 """
 Library / helper functions to manage idempotent execution of flaky tasks.
@@ -72,6 +76,89 @@ def robust_task(objs: dict[str, str]|list[str], task, progress_name=DEFAULT_FILE
         progress[name] = results
     return progress
 
+"""
+Run an async task over the given objects, 
+    saving progress as JSON to disk
+Sleeps for (delay) seconds after each batch (default 0)
+Each task has a timeout window of 8 seconds.
+Automatically retries to process all timed out items 
+    at the end with a doubled timeout window
+    (control with retry_timeouts=False
+"""
+def async_robust_task(
+        objs: dict[str, str]|list[str], 
+        task, 
+        progress_name=DEFAULT_FILENAME, 
+        skip_existing=True, 
+        show_progress=True,
+        batch_size=100,
+        delay=0,
+        timeout=8,
+        retry_timeouts=True,
+):
+    progress = load_progress(progress_name)
+    if isinstance(objs, list):
+        objs = {k:k for k in objs}
+    n_objs = len(objs.keys())
+    processed = len(progress)
+
+    bi = 0
+    timeouts = 0
+    
+    names = (k for k in objs.keys() if k not in progress) if skip_existing else objs.keys()
+
+    for batch in gen_batches(names, batch_size):
+        bi += 1
+        async def process(name):
+            try:
+                value = objs[name]
+                results = await asyncio.wait_for(task(value), timeout=timeout)
+                return name, results
+            except asyncio.TimeoutError:
+                timeouts += 1
+                return name, None
+            except Exception as e:
+                print_err(f"robust_task: processing {name} raised {e.__class__.__name__}: {e}, skipping this item")
+                return name, None
+
+        tasks = []
+        for name in batch:
+            tasks.append(process(name))
+
+        async def execute_all(tasks):
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                name, value = result
+                if value is not None:
+                    save_progress(progress_name, name, value)
+                    progress[name] = value
+
+        asyncio.run(execute_all(tasks))
+        processed += len(tasks)
+        if (show_progress):
+            pct = int(processed / n_objs * 100)
+            sys.stderr.write(f"{bi}: {processed}/{n_objs} - {pct}%\r")
+        if delay and len(tasks) > 0:
+            time.sleep(delay)
+
+    if (timeouts):
+        print_err(f"{timeouts} items timed out")
+        if (retry_timeouts):
+            print_err(f"Auto-retrying with doubled timeout")
+            timeout_objs = {k: objs[k] for k in timeouts}
+            return asyncio.run(async_robust_task(
+                timeout_objs,
+                task, 
+                progress_name,
+                skip_existing,
+                show_progress,
+                batch_size,
+                delay,
+                timeout * 2,
+                retry_timeouts=False
+            ))
+
+    return progress
 
 def naive_dict_to_tsv(data):
     if len(data) > 0:
