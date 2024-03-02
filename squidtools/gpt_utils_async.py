@@ -52,12 +52,11 @@ async def json_prompt(prompt_text, input, method=basic_prompt, model=DEFAULT_MOD
         check = schema(serialized)
         if check != 1:
             if attempt < MAX_ATTEMPTS:
-                print_err(f"Schema check failed, retrying ({attempt})")
+                print_err(f"Schema check failed, retrying ({attempt}) ({serialized})")
                 if check > best[0]:
                     best = (check, serialized)
                 return await json_prompt(prompt_text, input, method, model, schema, attempt + 1, best)
             else:
-                print_err(serialized)
                 if best[1]:
                     return best[1]
                 else:
@@ -106,12 +105,14 @@ def get_total_tokens(responses):
 def get_total_cost(responses):
     input_costs = {
         "gpt-4-0613": 0.03 / 1000,
+        "gpt-4-1106-preview": 0.01 / 1000,
         "gpt-3.5-turbo-0613": 0.0015 / 1000,
         "gpt-3.5-turbo-0125": 0.0005 / 1000,
         "gpt-3.5-turbo-16k-0613": 0.003 / 1000,
     }
     output_costs = {
         "gpt-4-0613": 0.06 / 1000,
+        "gpt-4-1106-preview": 0.03 / 1000,
         "gpt-3.5-turbo-0613": 0.002 / 1000,
         "gpt-3.5-turbo-0125": 0.0015 / 1000,
         "gpt-3.5-turbo-16k-0613": 0.004 / 1000,

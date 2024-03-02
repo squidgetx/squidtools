@@ -59,12 +59,13 @@ def robust_task(objs: dict[str, str]|list[str], task, progress_name=DEFAULT_FILE
         objs = {k:k for k in objs}
 
     n_objs = len(objs.keys())
+    names = (k for k in objs.keys() if k not in progress) if skip_existing else objs.keys()
 
-    for i, (name, value) in enumerate(objs.items()):
+    for i, name in enumerate(names):
         if skip_existing and name in progress:
             continue
         try:
-            results = task(value) 
+            results = task(objs[name]) 
             save_progress(progress_name, name, results)
         except Exception as e:
             sys.stderr.write(f"robust_task: processing {name} raised {e.__class__.__name__}: {e}, skipping this item\n")
@@ -94,7 +95,7 @@ def async_robust_task(
         batch_size=100,
         delay=0,
         timeout=8,
-        retry_timeouts=True,
+        retry_errs=True,
 ):
     progress = load_progress(progress_name)
     if isinstance(objs, list):
@@ -103,7 +104,7 @@ def async_robust_task(
     processed = len(progress)
 
     bi = 0
-    timeouts = 0
+    errs = {}
     
     names = (k for k in objs.keys() if k not in progress) if skip_existing else objs.keys()
 
@@ -114,8 +115,9 @@ def async_robust_task(
                 value = objs[name]
                 results = await asyncio.wait_for(task(value), timeout=timeout)
                 return name, results
-            except asyncio.TimeoutError:
-                timeouts += 1
+            except asyncio.TimeoutError as e:
+                # Don't print an error message
+                print_err(f"robust_task: processing {name} timed out")
                 return name, None
             except Exception as e:
                 print_err(f"robust_task: processing {name} raised {e.__class__.__name__}: {e}, skipping this item")
@@ -132,6 +134,8 @@ def async_robust_task(
                 if value is not None:
                     save_progress(progress_name, name, value)
                     progress[name] = value
+                else:
+                    errs[name] = objs[name]
 
         asyncio.run(execute_all(tasks))
         processed += len(tasks)
@@ -141,13 +145,12 @@ def async_robust_task(
         if delay and len(tasks) > 0:
             time.sleep(delay)
 
-    if (timeouts):
-        print_err(f"{timeouts} items timed out")
-        if (retry_timeouts):
-            print_err(f"Auto-retrying with doubled timeout")
-            timeout_objs = {k: objs[k] for k in timeouts}
-            return asyncio.run(async_robust_task(
-                timeout_objs,
+    if len(errs) > 0:
+        print_err(f"{len(errs)} items failed")
+        if (retry_errs):
+            print_err(f"Auto-retrying with doubled timeout ({timeout*2}s)")
+            async_robust_task(
+                errs,
                 task, 
                 progress_name,
                 skip_existing,
@@ -155,8 +158,9 @@ def async_robust_task(
                 batch_size,
                 delay,
                 timeout * 2,
-                retry_timeouts=False
-            ))
+                retry_errs=False
+            )
+            progress = load_progress(progress_name)
 
     return progress
 
